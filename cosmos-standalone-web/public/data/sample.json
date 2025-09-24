@@ -1,0 +1,50 @@
+[
+  {
+    "id": "sample-1",
+    "name": "3D Galaxy Model",
+    "source": "icosa",
+    "type": "icosa",
+    "description": "Beautiful galaxy visualization",
+    "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF-Binary/Duck.glb",
+    "format": "glb"
+  },
+  {
+    "id": "sample-2",
+    "name": "Cosmos Viewer",
+    "source": "github",
+    "type": "repository",
+    "url": "https://github.com/example/cosmos-viewer",
+    "relationships": [
+      { "target": "sample-3", "strength": 0.8 }
+    ]
+  },
+  {
+    "id": "sample-3",
+    "name": "Three.js",
+    "source": "github",
+    "type": "library",
+    "url": "https://github.com/mrdoob/three.js",
+    "relationships": [
+      { "target": "sample-2", "strength": 0.8 }
+    ]
+  },
+  {
+    "id": "sample-4", 
+    "name": "Abstract Sculpture",
+    "source": "objaverse",
+    "type": "objaverse",
+    "description": "Procedural 3D art",
+    "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "format": "glb"
+  },
+  {
+    "id": "sample-5",
+    "name": "Web Resource",
+    "source": "web",
+    "type": "web",
+    "url": "https://threejs.org",
+    "relationships": [
+      { "target": "sample-3", "strength": 0.5 }
+    ]
+  }
+]
