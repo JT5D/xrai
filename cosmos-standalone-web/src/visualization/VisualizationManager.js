@@ -3,6 +3,7 @@ import { gsap } from 'gsap';
 import { CityBlocksLayout } from './layouts/CityBlocksLayout.js';
 import { CosmosLayout } from './layouts/CosmosLayout.js';
 import { TreeLayout } from './layouts/TreeLayout.js';
+import { MassiveDataLayout } from './layouts/MassiveDataLayout.js';
 import { MetavidoVFX } from './effects/MetavidoVFX.js';
 
 export class VisualizationManager {
@@ -14,6 +15,7 @@ export class VisualizationManager {
         this.cityLayout = new CityBlocksLayout(scene);
         this.cosmosLayout = new CosmosLayout(scene);
         this.treeLayout = new TreeLayout(scene);
+        this.massiveLayout = new MassiveDataLayout(scene);
         this.metavidoVFX = new MetavidoVFX(scene);
         
         this.currentLayout = null;
@@ -37,8 +39,16 @@ export class VisualizationManager {
     
     async createCosmos(graphData) {
         this.clear();
-        this.currentLayout = this.cosmosLayout;
-        await this.cosmosLayout.generate(graphData);
+        
+        // Automatically choose best layout based on data size
+        if (graphData.nodes.length > 10000) {
+            console.log(`Large dataset detected: ${graphData.nodes.length} nodes. Using MassiveDataLayout.`);
+            this.currentLayout = this.massiveLayout;
+            await this.massiveLayout.generate(graphData, this.camera);
+        } else {
+            this.currentLayout = this.cosmosLayout;
+            await this.cosmosLayout.generate(graphData);
+        }
         
         // Animate camera to cosmos view
         gsap.to(this.camera.position, {
@@ -87,6 +97,7 @@ export class VisualizationManager {
         this.cityLayout.clear();
         this.cosmosLayout.clear();
         this.treeLayout.clear();
+        this.massiveLayout.clear();
         this.metavidoVFX.hide();
         
         this.currentLayout = null;

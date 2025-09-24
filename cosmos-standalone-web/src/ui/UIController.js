@@ -13,6 +13,7 @@ export class UIController {
         this.setupLayoutControls();
         this.setupFileHandling();
         this.setupViewerControls();
+        this.setupStressTests();
         this.setupStats();
     }
     
@@ -119,6 +120,49 @@ export class UIController {
         };
     }
     
+    setupStressTests() {
+        // Add stress test buttons to the control panel if they don't exist
+        const controlPanel = document.querySelector('.control-panel');
+        
+        if (!document.getElementById('stressTest100k')) {
+            const stressSection = document.createElement('div');
+            stressSection.innerHTML = `
+                <div class="stress-test" style="margin-top: 20px; border-top: 1px solid #333; padding-top: 15px;">
+                    <h3>Performance Testing</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;">
+                        <button class="source-btn" id="stressTest10k">10K Nodes</button>
+                        <button class="source-btn" id="stressTest100k">100K Nodes</button>
+                        <button class="source-btn" id="stressTest1M">1M Nodes</button>
+                        <button class="source-btn" id="stressTestReal">Real Data</button>
+                    </div>
+                    <p style="font-size: 12px; color: #888; margin-top: 8px;">
+                        Test visualization performance with massive datasets
+                    </p>
+                </div>
+            `;
+            
+            controlPanel.appendChild(stressSection);
+            
+            // Add event listeners
+            document.getElementById('stressTest10k').addEventListener('click', () => {
+                this.app.runStressTest(10000);
+            });
+            
+            document.getElementById('stressTest100k').addEventListener('click', () => {
+                this.app.runStressTest(100000);
+            });
+            
+            document.getElementById('stressTest1M').addEventListener('click', () => {
+                this.app.runStressTest(1000000);
+            });
+            
+            document.getElementById('stressTestReal').addEventListener('click', async () => {
+                // Search all sources to get maximum real data
+                await this.app.performSearch('', ['icosa', 'objaverse', 'github', 'local', 'web']);
+            });
+        }
+    }
+    
     setupStats() {
         // Update FPS every second
         setInterval(() => {
@@ -160,8 +204,24 @@ export class UIController {
     }
     
     updateStats(stats) {
-        document.getElementById('nodeCount').textContent = `Nodes: ${stats.nodes || 0}`;
-        document.getElementById('linkCount').textContent = `Links: ${stats.links || 0}`;
+        document.getElementById('nodeCount').textContent = `Nodes: ${(stats.nodes || 0).toLocaleString()}`;
+        document.getElementById('linkCount').textContent = `Links: ${(stats.links || 0).toLocaleString()}`;
+        
+        // Add performance stats if available
+        if (stats.generationTime) {
+            const perfDiv = document.getElementById('performanceStats') || (() => {
+                const div = document.createElement('div');
+                div.id = 'performanceStats';
+                div.style.cssText = 'font-size: 11px; color: #666; margin-top: 5px;';
+                document.querySelector('.stats').appendChild(div);
+                return div;
+            })();
+            
+            perfDiv.innerHTML = `
+                Generation: ${stats.generationTime}<br>
+                Total: ${stats.totalTime}
+            `;
+        }
     }
     
     updateFPS() {

@@ -39,15 +39,17 @@ export class DataManager {
         return this.rankResults(results, query);
     }
     
-    rankResults(results, query) {
-        // Simple relevance ranking
+    rankResults(results, query, maxResults = 1000000) {
+        // Optimized ranking for massive datasets
+        console.log(`Ranking ${results.length} results, max: ${maxResults}`);
+        
         return results
             .map(result => ({
                 ...result,
                 relevance: this.calculateRelevance(query, result)
             }))
             .sort((a, b) => (b.relevance || 0) - (a.relevance || 0))
-            .slice(0, 100); // Limit to 100 results
+            .slice(0, maxResults); // Support up to 1M results
     }
     
     calculateRelevance(query, result) {
@@ -130,51 +132,332 @@ export class DataManager {
 
 // Search Providers
 class IcosaProvider {
-    async search(query) {
+    constructor() {
+        // API endpoints for Casa (Poly) and Polli
+        this.casaApiEndpoint = 'https://poly.pizza/api/v1'; // Poly.pizza API
+        this.polliApiEndpoint = 'https://api.polli.com/v1'; // Polli database
+        this.sketchfabApiEndpoint = 'https://api.sketchfab.com/v3'; // Sketchfab as alternative
+        this.pageSize = 1000; // Items per request for large-scale loading
+        this.maxConcurrentRequests = 5; // Parallel API requests
+    }
+    
+    async search(query, limit = 100000) {
         try {
-            // Note: Icosa Gallery is now Poly (poly.cam)
-            // For demo purposes, return sample 3D models
-            // In production, you would integrate with Poly's API
+            console.log(`Searching Casa/Polli APIs for: "${query}" (limit: ${limit})`);
+            const allResults = [];
             
-            // Sample GLTF models from various sources
-            const sampleModels = [
-                {
-                    name: 'Astronaut',
-                    modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb'
-                },
-                {
-                    name: 'Damaged Helmet',
-                    modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/DamagedHelmet/glTF-Binary/DamagedHelmet.glb'
-                },
-                {
-                    name: 'Flight Helmet',
-                    modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/FlightHelmet/glTF/FlightHelmet.gltf'
-                },
-                {
-                    name: 'Lantern',
-                    modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Lantern/glTF-Binary/Lantern.glb'
-                },
-                {
-                    name: 'Water Bottle',
-                    modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/WaterBottle/glTF-Binary/WaterBottle.glb'
-                }
-            ];
+            // Execute API searches in parallel for speed
+            const apiPromises = [];
             
-            // Filter by query
-            const filtered = sampleModels.filter(model => 
-                model.name.toLowerCase().includes(query.toLowerCase()) || query.toLowerCase() === 'all'
+            // 1. Try Casa/Poly API
+            apiPromises.push(
+                this.searchCasaAPI(query, limit)
+                    .catch(err => {
+                        console.log('Casa API error:', err.message);
+                        return [];
+                    })
             );
             
-            return filtered.slice(0, 5).map((model, i) => ({
-                id: `icosa-${i}`,
+            // 2. Try Polli database
+            apiPromises.push(
+                this.searchPolliAPI(query, limit)
+                    .catch(err => {
+                        console.log('Polli API error:', err.message);
+                        return [];
+                    })
+            );
+            
+            // 3. Try Sketchfab as alternative
+            apiPromises.push(
+                this.searchSketchfabAPI(query, Math.min(limit, 1000))
+                    .catch(err => {
+                        console.log('Sketchfab API error:', err.message);
+                        return [];
+                    })
+            );
+            
+            // 4. Load from local Objaverse index for massive datasets
+            apiPromises.push(
+                this.loadObjaverseIndex(query, limit)
+                    .catch(err => {
+                        console.log('Objaverse index error:', err.message);
+                        return [];
+                    })
+            );
+            
+            // Wait for all API calls to complete
+            const results = await Promise.all(apiPromises);
+            results.forEach(apiResults => allResults.push(...apiResults));
+            
+            console.log(`Total results found: ${allResults.length}`);
+            
+            // Convert to optimized graph nodes for 1M+ visualization
+            return this.createOptimizedNodes(allResults.slice(0, limit));
+        } catch (error) {
+            console.error('Icosa search error:', error);
+            return [];
+        }
+    }
+    
+    async searchCasaAPI(query, limit) {
+        // Casa/Poly.pizza API integration
+        const results = [];
+        const pagesNeeded = Math.ceil(limit / this.pageSize);
+        
+        for (let page = 1; page <= Math.min(pagesNeeded, 10); page++) {
+            try {
+                const response = await fetch(
+                    `${this.casaApiEndpoint}/assets?q=${encodeURIComponent(query)}&page=${page}&per_page=${this.pageSize}`,
+                    {
+                        headers: {
+                            'Accept': 'application/json',
+                            // 'Authorization': 'Bearer YOUR_CASA_API_KEY' // Add if required
+                        }
+                    }
+                );
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const assets = data.assets || data.results || [];
+                    
+                    assets.forEach(asset => {
+                        results.push({
+                            id: `casa-${asset.id || asset.uid}`,
+                            name: asset.displayName || asset.name || asset.title,
+                            artist: asset.authorName || asset.creator || 'Unknown',
+                            description: asset.description || '',
+                            modelUrl: this.extractModelUrl(asset),
+                            thumbnail: asset.thumbnail?.url || asset.preview_url,
+                            license: asset.license || 'CC BY 4.0',
+                            polyCount: asset.metadata?.triangleCount || asset.polyCount,
+                            tags: asset.tags || []
+                        });
+                    });
+                }
+            } catch (err) {
+                // Continue with partial results
+            }
+        }
+        
+        return results;
+    }
+    
+    async searchPolliAPI(query, limit) {
+        // Polli database API integration
+        const results = [];
+        
+        try {
+            const response = await fetch(`${this.polliApiEndpoint}/search`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    // 'Authorization': 'Bearer YOUR_POLLI_API_KEY' // Add if required
+                },
+                body: JSON.stringify({
+                    query: query,
+                    limit: Math.min(limit, 10000),
+                    filters: {
+                        formats: ['glb', 'gltf', 'obj', 'fbx'],
+                        hasAnimation: false // For performance
+                    }
+                })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                const models = data.models || data.results || [];
+                
+                models.forEach(model => {
+                    results.push({
+                        id: `polli-${model.id || model.uid}`,
+                        name: model.name || model.title,
+                        artist: model.creator || model.author || 'Unknown',
+                        description: model.description || '',
+                        modelUrl: model.download_url || model.model_url,
+                        thumbnail: model.thumbnail_url || model.preview,
+                        polyCount: model.poly_count || model.vertices,
+                        tags: model.tags || model.categories || []
+                    });
+                });
+            }
+        } catch (err) {
+            // Continue without Polli results
+        }
+        
+        return results;
+    }
+    
+    async searchSketchfabAPI(query, limit) {
+        // Sketchfab as alternative 3D asset source
+        const results = [];
+        
+        try {
+            const response = await fetch(
+                `${this.sketchfabApiEndpoint}/search?q=${encodeURIComponent(query)}&type=models&downloadable=true&count=${Math.min(limit, 100)}`,
+                {
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                }
+            );
+            
+            if (response.ok) {
+                const data = await response.json();
+                const models = data.results || [];
+                
+                models.forEach(model => {
+                    results.push({
+                        id: `sketchfab-${model.uid}`,
+                        name: model.name,
+                        artist: model.user?.displayName || 'Unknown',
+                        description: model.description || '',
+                        modelUrl: model.download?.glb?.url || model.viewerUrl,
+                        thumbnail: model.thumbnails?.images?.[0]?.url,
+                        polyCount: model.vertexCount,
+                        tags: model.tags?.map(t => t.name) || []
+                    });
+                });
+            }
+        } catch (err) {
+            // Continue without Sketchfab results
+        }
+        
+        return results;
+    }
+    
+    async loadObjaverseIndex(query, limit) {
+        // Load from massive local Objaverse dataset for 1M+ results
+        const results = [];
+        
+        try {
+            // Check if we have the local index file
+            const response = await fetch('/objaverse_gltf_index_lite.json');
+            if (response.ok) {
+                const index = await response.json();
+                console.log(`Loading from Objaverse index: ${index.length} total models`);
+                
+                // Efficient filtering for large datasets
+                const queryLower = query.toLowerCase();
+                let count = 0;
+                
+                for (let i = 0; i < index.length && count < limit; i++) {
+                    const item = index[i];
+                    const searchText = `${item.n || ''} ${(item.g || []).join(' ')}`.toLowerCase();
+                    
+                    // Match query or return all if query is empty
+                    if (queryLower === '' || searchText.includes(queryLower)) {
+                        results.push({
+                            id: `obja-${i}`,
+                            name: item.n || `Model ${i + 1}`,
+                            artist: item.s || 'Objaverse',
+                            modelUrl: item.i,
+                            tags: item.g || [],
+                            description: `From ${item.s || 'Unknown source'}`
+                        });
+                        count++;
+                    }
+                }
+                
+                console.log(`Loaded ${count} models from Objaverse matching "${query}"`);
+            }
+        } catch (err) {
+            console.log('Objaverse index not available');
+        }
+        
+        return results;
+    }
+    
+    extractModelUrl(asset) {
+        // Extract model URL from various API response formats
+        if (asset.formats) {
+            const glbFormat = asset.formats.find(f => f.formatType === 'GLTF2' || f.format === 'glb');
+            if (glbFormat) return glbFormat.root?.url || glbFormat.url;
+            
+            const gltfFormat = asset.formats.find(f => f.format === 'gltf');
+            if (gltfFormat) return gltfFormat.url;
+        }
+        
+        return asset.download_url || asset.model_url || asset.glb_url || asset.gltf_url || asset.url;
+    }
+    
+    createOptimizedNodes(items) {
+        // Optimized node creation for 1M+ items
+        console.log(`Creating optimized graph nodes for ${items.length} items`);
+        
+        const nodes = [];
+        const artistMap = new Map();
+        const tagMap = new Map();
+        
+        // Process items in chunks for better memory management
+        const chunkSize = 10000;
+        for (let i = 0; i < items.length; i += chunkSize) {
+            const chunk = items.slice(i, Math.min(i + chunkSize, items.length));
+            
+            chunk.forEach((item, idx) => {
+                const globalIdx = i + idx;
+                
+                // Create lightweight artwork node
+                const artworkNode = {
+                    id: item.id || `icosa-${globalIdx}`,
+                    source: 'icosa',
+                    name: item.name || `Model ${globalIdx}`,
+                    type: 'artwork',
+                    modelUrl: item.modelUrl,
+                    val: 1 + (item.polyCount ? Math.log10(item.polyCount + 1) / 6 : 0),
+                    // Minimal data for memory efficiency
+                    data: {
+                        artist: item.artist,
+                        thumb: item.thumbnail,
+                        tags: item.tags?.slice(0, 3) // Limit tags
+                    }
+                };
+                
+                nodes.push(artworkNode);
+                
+                // Group by artist (limit to prevent too many artist nodes)
+                if (item.artist && artistMap.size < 1000) {
+                    if (!artistMap.has(item.artist)) {
+                        artistMap.set(item.artist, {
+                            id: `artist-${item.artist.replace(/[^a-zA-Z0-9]/g, '-')}`,
+                            name: item.artist,
+                            count: 0
+                        });
+                    }
+                    artistMap.get(item.artist).count++;
+                }
+                
+                // Track popular tags for clustering
+                if (item.tags) {
+                    item.tags.slice(0, 3).forEach(tag => {
+                        if (!tagMap.has(tag)) {
+                            tagMap.set(tag, 0);
+                        }
+                        tagMap.set(tag, tagMap.get(tag) + 1);
+                    });
+                }
+            });
+        }
+        
+        // Add top artists as nodes
+        const topArtists = Array.from(artistMap.values())
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 100);
+        
+        topArtists.forEach(artist => {
+            nodes.push({
+                id: artist.id,
                 source: 'icosa',
-                name: model.name,
-                description: `3D model from Poly Gallery`,
-                modelUrl: model.modelUrl,
-                format: 'glb',
-                thumbnail: `https://picsum.photos/200?random=${i}`,
-                url: 'https://poly.cam/'
-            }));
+                name: artist.name,
+                type: 'artist',
+                val: 2 + Math.log10(artist.count),
+                data: { artworkCount: artist.count }
+            });
+        });
+        
+        console.log(`Created ${nodes.length} nodes (${items.length} artworks, ${topArtists.length} artists)`);
+        console.log(`Top tags: ${Array.from(tagMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10).map(t => t[0]).join(', ')}`);
+        
+        return nodes;
         } catch (error) {
             console.error('Icosa search error:', error);
             return [];
@@ -198,7 +481,7 @@ class ObjaverseProvider {
                     const results = index.filter(item => {
                         const searchText = `${item.n || ''} ${item.g?.join(' ') || ''}`.toLowerCase();
                         return searchText.includes(query.toLowerCase());
-                    }).slice(0, 20);
+                    }).slice(0, 100000); // Load up to 100k from Objaverse index
                     
                     return results.map((item, i) => ({
                         id: `objaverse-${i}`,
@@ -256,33 +539,92 @@ class ObjaverseProvider {
 class GitHubProvider {
     async search(query) {
         try {
-            // Option 1: Use GitHub API (requires token for better rate limits)
-            // const response = await fetch(`https://api.github.com/search/repositories?q=${query}+3d+webgl+gltf`, {
-            //     headers: {
-            //         'Accept': 'application/vnd.github.v3+json',
-            //         // 'Authorization': 'token YOUR_GITHUB_TOKEN'
-            //     }
-            // });
-            
-            // Option 2: Load from sample GitHub Archive data
-            try {
-                // Try to fetch recent GitHub events
-                const date = new Date();
-                date.setHours(date.getHours() - 1); // Get previous hour
-                const dateStr = date.toISOString().split('T')[0];
-                const hour = date.getUTCHours();
-                
-                // GitHub Archive URL
-                const archiveUrl = `https://data.gharchive.org/${dateStr}-${hour}.json.gz`;
-                
-                // For demo, use cached sample data
-                const response = await fetch('/data/github-sample.json');
-                if (response.ok) {
-                    const events = await response.json();
-                    return this.processGitHubEvents(events, query);
+            // Use GitHub API directly for real search results
+            const response = await fetch(`https://api.github.com/search/repositories?q=${encodeURIComponent(query)}+in:name,description&sort=stars&order=desc&per_page=20`, {
+                headers: {
+                    'Accept': 'application/vnd.github.v3+json',
+                    'User-Agent': 'CosmosVisualizer/1.0'
                 }
-            } catch (err) {
-                console.log('Using fallback GitHub data');
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log(`Found ${data.total_count} GitHub repositories for "${query}"`);
+                
+                const nodes = [];
+                const relationships = [];
+                
+                data.items.forEach((repo, i) => {
+                    // Add repository node
+                    const repoNode = {
+                        id: `github-repo-${repo.id}`,
+                        source: 'github',
+                        name: repo.name,
+                        description: repo.description || 'No description',
+                        type: 'repository',
+                        url: repo.html_url,
+                        val: Math.log(repo.stargazers_count + 1) / 2,
+                        stars: repo.stargazers_count,
+                        language: repo.language,
+                        topics: repo.topics || [],
+                        created_at: repo.created_at,
+                        updated_at: repo.updated_at,
+                        owner: repo.owner.login
+                    };
+                    nodes.push(repoNode);
+                    
+                    // Add owner as a separate node
+                    const ownerNode = {
+                        id: `github-user-${repo.owner.id}`,
+                        source: 'github',
+                        name: repo.owner.login,
+                        type: 'user',
+                        url: repo.owner.html_url,
+                        avatar: repo.owner.avatar_url,
+                        val: 1.5
+                    };
+                    
+                    // Only add owner if not already added
+                    if (!nodes.find(n => n.id === ownerNode.id)) {
+                        nodes.push(ownerNode);
+                    }
+                    
+                    // Add relationship
+                    relationships.push({
+                        source: ownerNode.id,
+                        target: repoNode.id,
+                        strength: 1,
+                        type: 'owns'
+                    });
+                    
+                    // Add language relationships
+                    if (repo.language && i > 0) {
+                        const prevRepo = data.items[i - 1];
+                        if (prevRepo.language === repo.language) {
+                            relationships.push({
+                                source: `github-repo-${prevRepo.id}`,
+                                target: repoNode.id,
+                                strength: 0.3,
+                                type: 'same_language'
+                            });
+                        }
+                    }
+                });
+                
+                // Add relationships to nodes
+                nodes.forEach(node => {
+                    node.relationships = relationships
+                        .filter(rel => rel.source === node.id || rel.target === node.id)
+                        .map(rel => ({
+                            target: rel.source === node.id ? rel.target : rel.source,
+                            strength: rel.strength,
+                            type: rel.type
+                        }));
+                });
+                
+                return nodes;
+            } else {
+                console.log('GitHub API rate limited, using fallback');
             }
             
             // Fallback: Real 3D/WebGL related repositories
@@ -524,7 +866,163 @@ class WebProvider {
 
 class LocalProvider {
     async search(query) {
-        // Would search local indexed files
-        return [];
+        try {
+            // Search through local file index
+            const localFiles = [
+                // Unity Projects
+                {
+                    name: 'unity-cosmos',
+                    type: 'unity_project',
+                    path: '/Users/jamestunick/Desktop/XRAI/unity-cosmos',
+                    description: 'Unity VR cosmos visualization project'
+                },
+                {
+                    name: 'SplatVFX_Experiments',
+                    type: 'unity_project', 
+                    path: '/Users/jamestunick/Desktop/XRAI/vnmf stuff/vnmf-complete/decoder/unity/SplatVFX_Experiments-main',
+                    description: 'Unity VFX experiments with splat rendering'
+                },
+                
+                // 3D Models and Assets
+                {
+                    name: 'objaverse_gltf_index_lite.json',
+                    type: 'data_file',
+                    path: '/Users/jamestunick/Desktop/XRAI/objaverse_gltf_index_lite.json',
+                    description: 'Index of 200k+ 3D models from Objaverse',
+                    size: '26MB'
+                },
+                {
+                    name: 'objaverse_glb_index_lite.json', 
+                    type: 'data_file',
+                    path: '/Users/jamestunick/Desktop/XRAI/objaverse_glb_index_lite.json',
+                    description: 'GLB format index for Objaverse models',
+                    size: '206MB'
+                },
+                
+                // AI Services
+                {
+                    name: 'xrrai-prompt',
+                    type: 'ai_project',
+                    path: '/Users/jamestunick/Desktop/XRAI/xrrai-prompt',
+                    description: 'AI-powered 3D content generation platform'
+                },
+                {
+                    name: 'TTS Services',
+                    type: 'ai_service',
+                    path: '/Users/jamestunick/Desktop/XRAI/xrrai-prompt/TTS',
+                    description: 'Text-to-speech AI services'
+                },
+                
+                // Web Projects
+                {
+                    name: 'cosmos-standalone-web',
+                    type: 'web_project',
+                    path: '/Users/jamestunick/Desktop/XRAI/cosmos-standalone-web',
+                    description: 'Three.js hypergraph visualizer'
+                },
+                {
+                    name: 'AI-XR-MCP-main',
+                    type: 'web_project',
+                    path: '/Users/jamestunick/Desktop/XRAI/AI-XR-MCP-main',
+                    description: 'MCP server for 3D WebGL visualizations'
+                },
+                
+                // Documentation and Specs
+                {
+                    name: 'xrai-format',
+                    type: 'specification',
+                    path: '/Users/jamestunick/Desktop/XRAI/xrai-format',
+                    description: 'XRAI spatial media format specification'
+                },
+                {
+                    name: 'CLAUDE.md',
+                    type: 'documentation',
+                    path: '/Users/jamestunick/Desktop/XRAI/CLAUDE.md',
+                    description: 'Claude Code project instructions'
+                },
+                
+                // Sample Projects
+                {
+                    name: 'EntityComponentSystemSamples',
+                    type: 'unity_samples',
+                    path: '/Users/jamestunick/Desktop/XRAI/vis/EntityComponentSystemSamples-master',
+                    description: 'Unity DOTS/ECS sample projects'
+                },
+                
+                // Media Files (examples)
+                {
+                    name: 'XR Portal Demo GIF',
+                    type: 'media_file',
+                    path: '/Users/jamestunick/Desktop/XRAI/364233351-078d9368-25ff-4fa8-99ed-0dbfadfc02b9.gif',
+                    description: 'XR portal demonstration animation'
+                },
+                {
+                    name: 'VFX Learning Guide',
+                    type: 'document',
+                    path: '/Users/jamestunick/Desktop/XRAI/931a11be-1f96-4bb6-8432-ad8fa2ebf3b2_Portals_101__XR__AI__VFX_Graph_Learning_Guide.pdf',
+                    description: 'XR AI VFX Graph learning guide'
+                }
+            ];
+            
+            // Filter by query
+            const filtered = localFiles.filter(file => {
+                const searchText = `${file.name} ${file.description} ${file.type}`.toLowerCase();
+                return searchText.includes(query.toLowerCase()) || query === '';
+            });
+            
+            // Add relationships based on project structure
+            const relationships = [];
+            filtered.forEach((file, i) => {
+                // Connect related files
+                if (file.type === 'unity_project' && filtered.some(f => f.type === 'unity_samples')) {
+                    const samplesFile = filtered.find(f => f.type === 'unity_samples');
+                    if (samplesFile) {
+                        relationships.push({
+                            source: file.name,
+                            target: samplesFile.name,
+                            strength: 0.5,
+                            type: 'related_project'
+                        });
+                    }
+                }
+                
+                // Connect AI projects to data files
+                if (file.type === 'ai_project' && filtered.some(f => f.type === 'data_file')) {
+                    filtered
+                        .filter(f => f.type === 'data_file')
+                        .forEach(dataFile => {
+                            relationships.push({
+                                source: file.name,
+                                target: dataFile.name,
+                                strength: 0.7,
+                                type: 'uses_data'
+                            });
+                        });
+                }
+            });
+            
+            return filtered.map((file, i) => ({
+                id: `local-${i}`,
+                source: 'local',
+                name: file.name,
+                description: file.description,
+                type: file.type,
+                path: file.path,
+                size: file.size,
+                val: file.size ? Math.log(parseInt(file.size)) : 2,
+                relationships: relationships
+                    .filter(rel => rel.source === file.name || rel.target === file.name)
+                    .map(rel => ({
+                        target: rel.source === file.name ? rel.target : rel.source,
+                        strength: rel.strength,
+                        type: rel.type
+                    }))
+            }));
+            
+        } catch (error) {
+            console.error('Local search error:', error);
+            return [];
+        }
     }
+}
 }

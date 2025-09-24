@@ -10,6 +10,7 @@ import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { gsap } from 'gsap';
 import { VisualizationManager } from './visualization/VisualizationManager.js';
 import { DataManager } from './data/DataManager.js';
+import { StressTestData } from './data/StressTestData.js';
 import { ModelLoader } from './loaders/ModelLoader.js';
 import { UIController } from './ui/UIController.js';
 
@@ -308,9 +309,13 @@ class CosmosVisualizer {
         this.uiController.showLoading();
         
         try {
+            console.log(`Searching for "${query}" in sources: ${sources.join(', ')}`);
             const results = await this.dataManager.search(query, sources);
             const graphData = this.dataManager.convertToGraphData(results);
             
+            console.log(`Search returned ${graphData.nodes.length} nodes, ${graphData.links.length} links`);
+            
+            this.lastGraphData = graphData;
             await this.updateVisualization(graphData);
             
             // Update stats
@@ -320,6 +325,48 @@ class CosmosVisualizer {
             });
         } catch (error) {
             console.error('Search error:', error);
+        } finally {
+            this.uiController.hideLoading();
+        }
+    }
+    
+    // Stress testing methods for 1M+ nodes
+    async runStressTest(nodeCount) {
+        console.log(`🚀 STRESS TEST: Generating ${nodeCount.toLocaleString()} nodes`);
+        this.uiController.showLoading();
+        
+        const startTime = performance.now();
+        
+        try {
+            let graphData;
+            
+            if (nodeCount <= 100000) {
+                // Use real Objaverse data for smaller tests
+                graphData = await StressTestData.loadObjaverseSubset(nodeCount);
+            } else {
+                // Generate synthetic data for massive tests
+                graphData = StressTestData.generateMassiveDataset(nodeCount);
+            }
+            
+            const generationTime = performance.now() - startTime;
+            console.log(`📊 Data generation took ${generationTime.toFixed(2)}ms`);
+            
+            this.lastGraphData = graphData;
+            await this.updateVisualization(graphData);
+            
+            const totalTime = performance.now() - startTime;
+            console.log(`🎯 STRESS TEST COMPLETE: ${nodeCount.toLocaleString()} nodes in ${totalTime.toFixed(2)}ms`);
+            
+            // Update stats
+            this.uiController.updateStats({
+                nodes: graphData.nodes.length,
+                links: graphData.links.length,
+                generationTime: `${generationTime.toFixed(0)}ms`,
+                totalTime: `${totalTime.toFixed(0)}ms`
+            });
+            
+        } catch (error) {
+            console.error('Stress test error:', error);
         } finally {
             this.uiController.hideLoading();
         }
