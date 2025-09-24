@@ -1,0 +1,65 @@
+
+.nx/installation
+.nx/cache
+.nx/workspace-data
+
+
+.cursor/rules/nx-rules.mdc
+.github/instructions/nx.instructions.md
+# Worktrees
+.worktrees/
+
+# Exclude subdirectories with their own git repos
+vnmf stuff/Splatterbox/
+vnmf stuff/LGM-tiny/
+xrrai-prompt/coqui-ai-TTS/
+xrrai-prompt/TTS/
+
+# Common files to ignore
+.DS_Store
+*.log
+node_modules/
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Large files and archives
+*.zip
+*.rar
+*.7z
+*.tar
+*.gz
+*.apk
+*.unitypackage
+*.exe
+*.dmg
+*.pkg
+
+# Media files
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+
+# Generated files
+build/
+dist/
+out/
+*.pyc
+__pycache__/
+
+# IDE files
+.idea/
+*.swp
+*.swo
+*~
+
+# Unity specific
+Library/
+Temp/
+Logs/
+UserSettings/
+*.pidb
+*.pdb
