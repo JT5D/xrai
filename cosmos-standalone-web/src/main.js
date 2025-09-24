@@ -230,13 +230,25 @@ class CosmosVisualizer {
         console.log('Node clicked:', nodeData);
         
         if (nodeData.modelUrl) {
-            this.uiController.showLoading();
-            try {
-                const model = await this.modelLoader.load(nodeData.modelUrl, nodeData.format);
-                this.displayModel(model);
-            } catch (error) {
-                console.error('Failed to load model:', error);
-                this.uiController.hideLoading();
+            // Option 1: Load in scene
+            if (this.currentMode === 'graph') {
+                this.uiController.showLoading();
+                try {
+                    const model = await this.modelLoader.load(nodeData.modelUrl, nodeData.format);
+                    this.displayModel(model);
+                } catch (error) {
+                    console.error('Failed to load model:', error);
+                    this.uiController.hideLoading();
+                }
+            } 
+            // Option 2: Load in Icosa viewer
+            else if (this.currentMode === 'icosa') {
+                const icosaFrame = document.getElementById('icosaFrame');
+                if (icosaFrame && icosaFrame.contentWindow) {
+                    icosaFrame.contentWindow.postMessage({
+                        modelUrl: nodeData.modelUrl
+                    }, '*');
+                }
             }
         } else if (nodeData.url) {
             window.open(nodeData.url, '_blank');

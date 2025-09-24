@@ -173,17 +173,64 @@ export class UIController {
         const frame = document.getElementById('icosaFrame');
         
         try {
-            // Fetch random artwork
-            const response = await fetch('https://api.icosa.foundation/artworks/random');
-            const artwork = await response.json();
+            // Option 1: Use Poly (formerly Google Poly, now poly.cam)
+            // frame.src = 'https://poly.cam/';
             
-            // Load in iframe
-            frame.src = `https://icosa.foundation/artworks/${artwork.id}/embed`;
+            // Option 2: Use a self-hosted gallery viewer
+            // You would need to clone and host https://github.com/icosa-foundation/gallery-viewer
+            
+            // Option 3: Use model-viewer for individual models
+            const modelViewerHTML = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+                    <style>
+                        body { margin: 0; background: #000; }
+                        model-viewer {
+                            width: 100%;
+                            height: 100vh;
+                            background-color: #000;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <model-viewer
+                        src="https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/DamagedHelmet/glTF-Binary/DamagedHelmet.glb"
+                        alt="3D Model"
+                        auto-rotate
+                        camera-controls
+                        shadow-intensity="1"
+                        exposure="0.5"
+                        tone-mapping="neutral"
+                        environment-image="https://modelviewer.dev/shared-assets/environments/spruit_sunrise_1k_HDR.hdr"
+                    ></model-viewer>
+                    <script>
+                        // Listen for messages from parent to change model
+                        window.addEventListener('message', (event) => {
+                            if (event.data.modelUrl) {
+                                document.querySelector('model-viewer').src = event.data.modelUrl;
+                            }
+                        });
+                    </script>
+                </body>
+                </html>
+            `;
+            
+            // Create blob URL for the HTML
+            const blob = new Blob([modelViewerHTML], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            frame.src = url;
             viewer.classList.add('active');
+            
+            console.log('Loading model viewer...');
+            
+            // Clean up blob URL after iframe loads
+            frame.onload = () => {
+                setTimeout(() => URL.revokeObjectURL(url), 100);
+            };
         } catch (error) {
             console.error('Failed to load Icosa viewer:', error);
-            // Fallback to main gallery
-            frame.src = 'https://icosa.foundation/gallery/embed';
             viewer.classList.add('active');
         }
     }

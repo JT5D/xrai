@@ -132,20 +132,48 @@ export class DataManager {
 class IcosaProvider {
     async search(query) {
         try {
-            // In production, use actual API
-            // const response = await axios.get('https://api.icosa.foundation/artworks/search', {
-            //     params: { q: query, limit: 20 }
-            // });
+            // Note: Icosa Gallery is now Poly (poly.cam)
+            // For demo purposes, return sample 3D models
+            // In production, you would integrate with Poly's API
             
-            // Mock data for demo
-            return Array.from({ length: 5 }, (_, i) => ({
+            // Sample GLTF models from various sources
+            const sampleModels = [
+                {
+                    name: 'Astronaut',
+                    modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb'
+                },
+                {
+                    name: 'Damaged Helmet',
+                    modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/DamagedHelmet/glTF-Binary/DamagedHelmet.glb'
+                },
+                {
+                    name: 'Flight Helmet',
+                    modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/FlightHelmet/glTF/FlightHelmet.gltf'
+                },
+                {
+                    name: 'Lantern',
+                    modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Lantern/glTF-Binary/Lantern.glb'
+                },
+                {
+                    name: 'Water Bottle',
+                    modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/WaterBottle/glTF-Binary/WaterBottle.glb'
+                }
+            ];
+            
+            // Filter by query
+            const filtered = sampleModels.filter(model => 
+                model.name.toLowerCase().includes(query.toLowerCase()) || query.toLowerCase() === 'all'
+            );
+            
+            return filtered.slice(0, 5).map((model, i) => ({
                 id: `icosa-${i}`,
                 source: 'icosa',
-                name: `${query} Artwork ${i + 1}`,
-                description: `3D artwork matching "${query}"`,
-                modelUrl: `https://example.com/model${i}.gltf`,
-                format: 'gltf',
-                thumbnail: `https://picsum.photos/200?random=${i}`
+                name: model.name,
+                description: `3D model from Poly Gallery`,
+                modelUrl: model.modelUrl,
+                format: 'glb',
+                thumbnail: `https://picsum.photos/200?random=${i}`,
+                url: 'https://poly.cam/'
             }));
         } catch (error) {
             console.error('Icosa search error:', error);
