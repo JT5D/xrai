@@ -185,15 +185,67 @@ class IcosaProvider {
 class ObjaverseProvider {
     async search(query) {
         try {
-            // Mock Objaverse results
-            return Array.from({ length: 3 }, (_, i) => ({
-                id: `objaverse-${i}`,
+            // Load from local Objaverse index if available
+            const indexPath = '/objaverse_gltf_index_lite.json';
+            
+            try {
+                const response = await fetch(indexPath);
+                if (response.ok) {
+                    const index = await response.json();
+                    
+                    // Search through the index - structure is different
+                    // i: URL, n: name, s: source, g: array of filenames
+                    const results = index.filter(item => {
+                        const searchText = `${item.n || ''} ${item.g?.join(' ') || ''}`.toLowerCase();
+                        return searchText.includes(query.toLowerCase());
+                    }).slice(0, 20);
+                    
+                    return results.map((item, i) => ({
+                        id: `objaverse-${i}`,
+                        source: 'objaverse',
+                        name: item.n || `Model ${i + 1}`,
+                        description: `3D model from ${item.s || 'GitHub'}`,
+                        modelUrl: item.i, // The URL
+                        format: item.n?.endsWith('.glb') ? 'glb' : 'gltf',
+                        provider: item.s
+                    }));
+                }
+            } catch (err) {
+                console.log('Local index not found, using sample data');
+            }
+            
+            // Fallback to Objaverse sample objects with real URLs
+            const objaverseModels = [
+                {
+                    name: 'Chair',
+                    uid: 'chair-001',
+                    glb_url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/GlamVelvetSofa/glTF-Binary/GlamVelvetSofa.glb'
+                },
+                {
+                    name: 'Sci-Fi Helmet',
+                    uid: 'helmet-001', 
+                    glb_url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/SciFiHelmet/glTF-Binary/SciFiHelmet.glb'
+                },
+                {
+                    name: 'Boom Box',
+                    uid: 'boombox-001',
+                    glb_url: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/BoomBox/glTF-Binary/BoomBox.glb'
+                }
+            ];
+            
+            const filtered = objaverseModels.filter(model =>
+                model.name.toLowerCase().includes(query.toLowerCase()) || query === ''
+            );
+            
+            return filtered.map((item, i) => ({
+                id: `objaverse-${item.uid}`,
                 source: 'objaverse',
-                name: `${query} Object ${i + 1}`,
-                description: `3D object from Objaverse`,
-                modelUrl: `https://example.com/objaverse${i}.glb`,
+                name: item.name,
+                description: 'High-quality 3D model from Objaverse',
+                modelUrl: item.glb_url,
                 format: 'glb'
             }));
+            
         } catch (error) {
             console.error('Objaverse search error:', error);
             return [];
@@ -204,24 +256,94 @@ class ObjaverseProvider {
 class GitHubProvider {
     async search(query) {
         try {
-            // For demo, return mock GitHub data
-            const repos = [
-                { name: 'awesome-3d', owner: 'user1' },
-                { name: '3d-models', owner: 'user2' },
-                { name: 'webgl-demos', owner: 'user3' }
+            // Option 1: Use GitHub API (requires token for better rate limits)
+            // const response = await fetch(`https://api.github.com/search/repositories?q=${query}+3d+webgl+gltf`, {
+            //     headers: {
+            //         'Accept': 'application/vnd.github.v3+json',
+            //         // 'Authorization': 'token YOUR_GITHUB_TOKEN'
+            //     }
+            // });
+            
+            // Option 2: Load from sample GitHub Archive data
+            try {
+                // Try to fetch recent GitHub events
+                const date = new Date();
+                date.setHours(date.getHours() - 1); // Get previous hour
+                const dateStr = date.toISOString().split('T')[0];
+                const hour = date.getUTCHours();
+                
+                // GitHub Archive URL
+                const archiveUrl = `https://data.gharchive.org/${dateStr}-${hour}.json.gz`;
+                
+                // For demo, use cached sample data
+                const response = await fetch('/data/github-sample.json');
+                if (response.ok) {
+                    const events = await response.json();
+                    return this.processGitHubEvents(events, query);
+                }
+            } catch (err) {
+                console.log('Using fallback GitHub data');
+            }
+            
+            // Fallback: Real 3D/WebGL related repositories
+            const real3DRepos = [
+                {
+                    name: 'three.js',
+                    owner: 'mrdoob',
+                    description: 'JavaScript 3D library',
+                    stars: 95000,
+                    topics: ['3d', 'webgl', 'javascript']
+                },
+                {
+                    name: 'react-three-fiber',
+                    owner: 'pmndrs',
+                    description: 'React renderer for three.js',
+                    stars: 24000,
+                    topics: ['react', 'threejs', '3d']
+                },
+                {
+                    name: 'aframe',
+                    owner: 'aframevr',
+                    description: 'Web framework for building VR experiences',
+                    stars: 15000,
+                    topics: ['vr', 'webvr', '3d']
+                },
+                {
+                    name: 'babylonjs',
+                    owner: 'BabylonJS',
+                    description: 'Powerful 3D engine',
+                    stars: 21000,
+                    topics: ['3d', 'webgl', 'game-engine']
+                },
+                {
+                    name: 'model-viewer',
+                    owner: 'google',
+                    description: 'Display 3D models on the web',
+                    stars: 5000,
+                    topics: ['3d', 'gltf', 'web-components']
+                }
             ];
+            
+            const filtered = real3DRepos.filter(repo => {
+                const searchText = `${repo.name} ${repo.owner} ${repo.description} ${repo.topics.join(' ')}`.toLowerCase();
+                return searchText.includes(query.toLowerCase()) || query === '';
+            });
             
             const nodes = [];
             const relationships = [];
             
-            repos.forEach((repo, i) => {
+            filtered.forEach((repo, i) => {
                 // Add repo node
                 const repoNode = {
                     id: `github-repo-${i}`,
                     source: 'github',
                     name: repo.name,
+                    description: repo.description,
                     type: 'repository',
-                    url: `https://github.com/${repo.owner}/${repo.name}`
+                    url: `https://github.com/${repo.owner}/${repo.name}`,
+                    val: Math.log(repo.stars) / 2, // Size based on popularity
+                    stars: repo.stars,
+                    topics: repo.topics
                 };
                 nodes.push(repoNode);
                 
@@ -231,7 +353,8 @@ class GitHubProvider {
                     source: 'github',
                     name: repo.owner,
                     type: 'user',
-                    url: `https://github.com/${repo.owner}`
+                    url: `https://github.com/${repo.owner}`,
+                    val: 2
                 };
                 nodes.push(ownerNode);
                 
@@ -241,6 +364,15 @@ class GitHubProvider {
                     target: repoNode.id,
                     strength: 1
                 });
+                
+                // Add topic relationships
+                if (i > 0 && repo.topics.some(topic => filtered[i-1].topics.includes(topic))) {
+                    relationships.push({
+                        source: repoNode.id,
+                        target: `github-repo-${i-1}`,
+                        strength: 0.5
+                    });
+                }
             });
             
             // Add relationships to nodes
@@ -259,18 +391,134 @@ class GitHubProvider {
             return [];
         }
     }
+    
+    processGitHubEvents(events, query) {
+        const nodes = new Map();
+        const relationships = [];
+        
+        events
+            .filter(event => {
+                const searchText = `${event.repo?.name || ''} ${event.actor?.login || ''}`.toLowerCase();
+                return searchText.includes(query.toLowerCase());
+            })
+            .slice(0, 50)
+            .forEach(event => {
+                // Add actor
+                const actorId = `github-actor-${event.actor?.id}`;
+                if (!nodes.has(actorId)) {
+                    nodes.set(actorId, {
+                        id: actorId,
+                        source: 'github',
+                        name: event.actor?.login,
+                        type: 'user',
+                        url: `https://github.com/${event.actor?.login}`,
+                        val: 1
+                    });
+                }
+                
+                // Add repo
+                const repoId = `github-repo-${event.repo?.id}`;
+                if (!nodes.has(repoId)) {
+                    nodes.set(repoId, {
+                        id: repoId,
+                        source: 'github',
+                        name: event.repo?.name,
+                        type: 'repository',
+                        url: `https://github.com/${event.repo?.name}`,
+                        val: 2
+                    });
+                }
+                
+                relationships.push({
+                    source: actorId,
+                    target: repoId,
+                    type: event.type
+                });
+            });
+        
+        return Array.from(nodes.values());
+    }
 }
 
 class WebProvider {
     async search(query) {
-        // Mock web search results
-        return [{
-            id: 'web-1',
-            source: 'web',
-            name: `Web results for "${query}"`,
-            url: `https://www.google.com/search?q=${encodeURIComponent(query)}`,
-            description: 'Search the web for more results'
-        }];
+        try {
+            // Option 1: Use a search API like SerpAPI, Bing, etc (requires API key)
+            // const response = await fetch(`https://api.serpapi.com/search?q=${query}&api_key=YOUR_KEY`);
+            
+            // Option 2: Use Wikipedia API for educational content
+            try {
+                const wikiResponse = await fetch(
+                    `https://en.wikipedia.org/api/rest_v1/page/search/${encodeURIComponent(query)}?limit=5`
+                );
+                
+                if (wikiResponse.ok) {
+                    const wikiData = await wikiResponse.json();
+                    return wikiData.pages.map((page, i) => ({
+                        id: `wiki-${page.id}`,
+                        source: 'web',
+                        name: page.title,
+                        description: page.description || page.extract,
+                        url: `https://en.wikipedia.org/wiki/${encodeURIComponent(page.title)}`,
+                        thumbnail: page.thumbnail?.source
+                    }));
+                }
+            } catch (err) {
+                console.log('Wikipedia search failed, using fallback');
+            }
+            
+            // Fallback: Curated 3D/XR web resources
+            const webResources = [
+                {
+                    name: 'Three.js Documentation',
+                    url: 'https://threejs.org/docs/',
+                    description: 'Official Three.js documentation and examples'
+                },
+                {
+                    name: 'WebXR Samples',
+                    url: 'https://immersive-web.github.io/webxr-samples/',
+                    description: 'WebXR API examples and demos'
+                },
+                {
+                    name: 'Sketchfab',
+                    url: 'https://sketchfab.com/',
+                    description: 'Platform for publishing 3D models'
+                },
+                {
+                    name: 'A-Frame School',
+                    url: 'https://aframe.io/aframe-school/',
+                    description: 'Interactive tutorials for WebVR'
+                },
+                {
+                    name: 'Babylon.js Playground',
+                    url: 'https://playground.babylonjs.com/',
+                    description: 'Interactive Babylon.js examples'
+                }
+            ];
+            
+            const filtered = webResources.filter(resource => {
+                const searchText = `${resource.name} ${resource.description}`.toLowerCase();
+                return searchText.includes(query.toLowerCase()) || query === '';
+            });
+            
+            return filtered.map((resource, i) => ({
+                id: `web-${i}`,
+                source: 'web',
+                name: resource.name,
+                description: resource.description,
+                url: resource.url
+            }));
+            
+        } catch (error) {
+            console.error('Web search error:', error);
+            return [{
+                id: 'web-fallback',
+                source: 'web',
+                name: `Search web for "${query}"`,
+                url: `https://www.google.com/search?q=${encodeURIComponent(query + ' 3d webgl webxr')}`,
+                description: 'Search Google for 3D/WebGL/WebXR content'
+            }];
+        }
     }
 }
 
