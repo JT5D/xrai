@@ -15,7 +15,7 @@
     "axios": "^1.6.5"
   },
   "devDependencies": {
-    "vite": "^5.0.11",
+    "vite": "^8.0.5",
     "@types/three": "^0.169.0",
     "vite-plugin-compression": "^0.5.1"
   }
